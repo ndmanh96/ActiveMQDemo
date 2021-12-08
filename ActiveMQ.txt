@@ -1,0 +1,391 @@
+//mesage
+Mesage có thể send dữ liệu giữa các app với nhau
+
+
+// Tác dụng của JMS
+Cho phép các ứng dụng không đồng nhất, các ứng dụng xây dựng trên các nền tảng khác nhau
+có thể giao tiếp 1 cách liền mạch
+
+- Làm giảm tắc nghẽn trong quá trình giao tiếp
+
+- Dễ dàng scalability mở rộng các instance của mỗi ứng dụng
+
+- Mang lại sự linh hoạt và nhanh nhẹn
+
+// Message
+- Bao gồm 3 thành phần: header, properties, body
+
+//JMS hỗ trợ 2 loại mô hình message
+- Point to point
+	+ P2P cho phép chúng ta gửi và nhận tin nhắn cả đồng bộ và k đồng bộ
+	+ Message đưa vào queue chỉ được sử dụng 1 lần hoặc chỉ bởi only ứng dụng
+	
+
+
+- Publish/Subcribe
+	+ Nhiều ứng dụng có thể cùng sử dụng 1 message
+	+ Producer guwirt message đến topic virtual channel và JMS sẽ đảm bảo gửi
+	message đến tất cả các subcriber đã đăng ký topic đó
+
+// Apacher Active MQ
+
+//create broker
+artemis create mybroker
+
+//run broker
+- vào mybroker/bin
+- artemis run
+
+
+
+// Project
+-- Run broker trước
+
+- add dependency
+<!-- https://mvnrepository.com/artifact/org.apache.activemq/artemis-jms-client-all -->
+<dependency>
+    <groupId>org.apache.activemq</groupId>
+    <artifactId>artemis-jms-client-all</artifactId>
+    <version>2.19.0</version>
+</dependency>
+
+-- Create jndi.properties
+java.naming.factory.initial=org.apache.activemq.artemis.jndi.ActiveMQInitialContextFactory
+connectionFactory.ConnectionFactory=tcp://localhost:61616
+queue.queue/myQueue=myQueue
+
+-- Step with jms
+- Create connection -> create session-> look up destination -> send/receive mesage
+
+-- Su dung QueueBrowser
+Để tạo queue trong quá trình send message
+
+// JMS 2.0
+Sử dụng JMSContext, trong việc thay thế connection và session
+JMSProducer, JMSConsumer
+
+	public static void main(String[] args) throws Exception {
+		InitialContext context = new InitialContext();
+		Queue queue = (Queue) context.lookup("queue/myQueue");
+		
+		try(ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory(); JMSContext jmsContext = cf.createContext()) {
+			jmsContext.createProducer().send(queue, "Message from jmscontext");
+			
+			String messageRe = jmsContext.createConsumer(queue).receiveBody(String.class);
+			
+			System.out.println(messageRe);
+		}
+	}
+
+// Message priority 0->99,  99 is max priority
+Default priority is 4 
+
+--
+			JMSProducer producer = jmsContext.createProducer();
+			//priority 0->99 99 la maxx
+			producer.setPriority(3);
+			producer.send(queue, messages[0]); -- Thứ 2
+			
+			producer.setPriority(1);
+			producer.send(queue, messages[1]); -- Cuối cùng vì priority bé nhất
+			
+			producer.setPriority(9);
+			producer.send(queue, messages[2]); - Đầu tiên
+			
+			
+-- get message priority by getJMSPriority()
+	Message m = consumer.receive();
+	sysout(m.getJMSPriority())
+
+
+// request and reply message
+C1: Sử dụng 2 queue khác nhau cho phản hồi và request
+		Queue requestqueue = (Queue) context.lookup("queue/requestQueue");
+		Queue replyqueue = (Queue) context.lookup("queue/replyQueue");
+
+
+C2: Sử dụng replyTo JMS Header
+message có thể set queue cần reply trong phần header
+	requestMessage.setJMSReplyTo(replyqueue);
+Sau đó bên nhận được tin nhắn có thể get được queue này ra 
+	messageRev.getJMSReplyTo()
+	
+// MessageId and CorrelationId Headers
+
+replymesseage sẽ set CorrelationId là MessageId của tin nhắn được nhận được
+Để prodcuer có thể kiểm tra là reply tin nhắn của mình
+
+// Message setTimeToLive
+JMSProducer producer = jmsContext.createProducer();
+producer.setTimeToLive(2000);
+producer.send(queue, "MMMM");
+
+-- Dù message đã hết hạn rồi vẫn có thể lấy được message trong vùng hết hạn
+#Expired
+queue.queue/expiryQueue=ExpiryQueue -- trong config cua ActiveMQ
+
+jmsContext.createConsumer(expiryqueue).receiveBody(String.class);
+
+// Messagedelay
+- Delay bao lâu sẽ gửi message
+
+		JMSProducer producer = jmsContext.createProducer();
+		producer.setDeliveryDelay(3000);
+		producer.send(queue, "MMMM");
+
+//Custome properties
+			TextMessage requestMessage = jmsContext.createTextMessage("MMMMMMM");
+			
+			//custome properties
+			requestMessage.setBooleanProperty("logged", true);
+			requestMessage.setStringProperty("token", "123456");
+			
+Sau khi nhận message có thể get ra các giá trị này
+
+// Message type
+TextMessage, ByteMessage, ObjectMessage, StreamMessage, MapMessage
+
+-- ByteMessage
+			send
+			BytesMessage bytems = jmsContext.createBytesMessage();
+			bytems.writeUTF("Manh");
+			bytems.writeLong(123456);
+			
+			rcv
+			BytesMessage msrcv = (BytesMessage) consumer.receive(5000);
+			System.out.println(msrcv.readUTF());
+			System.out.println(msrcv.readLong());
+			
+-- Stream Message
+			send
+			StreamMessage msstream = jmsContext.createStreamMessage();
+			msstream.writeBoolean(true);
+			msstream.writeFloat(3.0f);
+			producer.send(requestqueue, msstream);
+			
+			rcv
+			StreamMessage msrcv = (StreamMessage) consumer.receive(5000);
+			System.out.println(msrcv.readBoolean());
+			System.out.println(msrcv.readFloat());
+-- MapMessage
+			send
+			//MapMessage
+			MapMessage mapms = jmsContext.createMapMessage();
+			mapms.setBoolean("isChecked", false);
+			producer.send(requestqueue, mapms);
+			
+			rcv
+			MapMessage maprcv = (MapMessage) consumer.receive(4000);
+			System.out.println(maprcv.getBoolean("ischecked"));
+			
+-- Object Message (class gửi cần implement Serializable)
+			send
+			//ObjectMessage
+			ObjectMessage obms = jmsContext.createObjectMessage();
+			obms.setObject(new Patient(1, "Manh"));
+			producer.send(requestqueue, obms);
+			
+			rcv
+			ObjectMessage obrcv = (ObjectMessage) consumer.receive(5000);
+			System.out.println(obrcv.getObject());
+			
+// P2P Mesage
+-- Thằng nhận cần tạo class implements MessageListener
+	class EligibilityCheckListener implements MessageListener{
+
+	@Override
+	public void onMessage(Message message) {
+		// TODO Auto-generated method stub
+		ObjectMessage obrcv = (ObjectMessage) message;
+		try {
+			Patienttttt patient = (Patienttttt) obrcv.getObject();
+			System.out.println(patient);
+		} catch (JMSException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}
+	
+}
+
+
+- Sau đó: 
+			JMSConsumer consumer = jmsContext.createConsumer(requestqueue);
+			consumer.setMessageListener(new EligibilityCheckListener());
+			
+// Pub Subcribe
+Vì có nhiều sub đăng ký chung 1 topic, mà 1 lý do nào đó 1 sub bị chết nên sẽ bị nỡ mất 
+message --> Cần backup và gửi lại sau --> Durable Subscription
+
+--  Durable Subscription
+Các sub sẽ đăng ký client ID và subscription Name
+--> Artemis sẽ biết được client đó đã nhận được message hay chưa
+Nếu không, nó sẽ gửi lại mà k xóa message
+		//set client id, sub name
+		jmsContext.setClientID("SecurityApp");
+		JMSConsumer consumer = jmsContext.createDurableConsumer(topic, "subscription1");
+		
+Sau khi dùng xong cần unsub
+		consumer.close();
+		jmsContext.unsubscribe("subscription1");
+		
+		
+-- Share Subscription
+			// Share subscription
+			JMSConsumer consumer = jmsContext.createSharedConsumer(topic, "shareconsumer");
+			JMSConsumer consumer2 = jmsContext.createSharedConsumer(topic, "shareconsumer");
+			
+			2 consumer sẽ thay phiên rev message
+
+//Filter message
+Filter dựa trên header, properties của message
+
+-- filter properties
+			//filter properties
+			String filterproperties = "hostpitalId";
+			obms.setIntProperty(filterproperties, 1); -- set trước khi gửi
+			
+			--> consumer cần đăng ký filterproperties
+			JMSConsumer consumer = jmsContext.createConsumer(queue, "hostpitalId=1");
+			
+	+ Ngoài dấu = còn có thể sử dụng
+			 * jmsContext.createConsumer(queue, "hostpitalId BETWEEN 1 AND 10");
+			 * jmsContext.createConsumer(queue, "doctorName LIKE 'M%'"); -- tương tự like SQL
+			 * jmsContext.createConsumer(queue, "doctorName IN ('Manh', 'Ninh')");
+		
+-- filter header(Không phải header nào cũng có thể sử dụng đẻ filter, chỉ có 1 vài cái như JMSPriority)
+			jmsContext.createConsumer(queue, "doctorName IN ('Manh', 'Ninh') OR JMSPriority BETWEEN 3 AND 6");
+			
+// Guaranteed Message
+
+-- AUTO_ACKNOWLEDGE
+If we use AUTO_ACKNOWLEDGE as the acknowledgement mode the 
+client auto acknowledge the message
+
+Producer cần define AUTO_ACKNOWLEDGE
+try (ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory();
+		JMSContext jmsContext = cf.createContext(JMSContext.AUTO_ACKNOWLEDGE))
+		
+Consumer tự động sẽ nhận được ms sau khi khởi động dù cho khởi động sau cả prodcuer đã gửi ms
+Đến khi consumer nhận thì message mới được server xóa
+
+Ngoài ra còn có DUPS_OK_ACKNOWLEDGE, CLIENT_ACKNOWLEDGE, 
+SESSION_TRANSACTED (context commit and rollback )
+
+//Security
+
+- Sử dụng artemis-user.properties để chứa username và password
+		  artemis-roles.properties để chứa các ủy quyền
+		  broker.xml
+Các filenayf đều trong etc của broker đã tạo của ActiveMQ
+
+-- artemis-user.properties
+clinicaluser = clinicalpass
+eligibilityuser = eligibilitypass
+
+-- artemis-roles.properties
+clinicalrole = clinicaluser
+eligibilityrole = eligibilityuser
+
+-- broker.xml
+
+Thêm vào jndi properties
+	#security
+	queue.queue/requestseQueue=manh.queues.request.requestseQueue
+	queue.queue/replyseQueue=manh.queues.reply.replyseQueue
+Thêm vào broker.xml
+	<security-setting match="manh.queues.request.#">
+            <permission type="createNonDurableQueue" roles="clinicalrole,eligibilityrole"/>
+            <permission type="deleteNonDurableQueue" roles="clinicalrole,eligibilityrole"/>
+            <permission type="createDurableQueue" roles="clinicalrole,eligibilityrole"/>
+            <permission type="deleteDurableQueue" roles="clinicalrole,eligibilityrole"/>
+            <permission type="createAddress" roles="clinicalrole,eligibilityrole"/>
+            <permission type="deleteAddress" roles="clinicalrole,eligibilityrole"/>
+            <permission type="consume" roles="eligibilityrole"/>
+            <permission type="browse" roles="clinicalrole"/>
+            <permission type="send" roles="clinicalrole"/>
+            <!-- we need this otherwise ./artemis data imp wouldn't work -->
+            <permission type="manage" roles="amq"/>
+         </security-setting>
+		 <security-setting match="manh.queues.reply.#">
+            <permission type="createNonDurableQueue" roles="clinicalrole,eligibilityrole"/>
+            <permission type="deleteNonDurableQueue" roles="clinicalrole,eligibilityrole"/>
+            <permission type="createDurableQueue" roles="clinicalrole,eligibilityrole"/>
+            <permission type="deleteDurableQueue" roles="clinicalrole,eligibilityrole"/>
+            <permission type="createAddress" roles="clinicalrole,eligibilityrole"/>
+            <permission type="deleteAddress" roles="clinicalrole,eligibilityrole"/>
+            <permission type="consume" roles="clinicalrole"/>
+            <permission type="browse" roles="eligibilityrole"/>
+            <permission type="send" roles="eligibilityrole"/>
+            <!-- we need this otherwise ./artemis data imp wouldn't work -->
+            <permission type="manage" roles="amq"/>
+         </security-setting>
+		 
+-- producer và consumer cần define username and password
+JMSContext jmsContext = cf.createContext("clinicaluser",  "clinicalpass")) {//define userneame and password
+JMSContext jmsContext = cf.createContext("eligibilityuser", "eligibilitypass")) { //define user name and password
+
+Nếu k sẽ k có quyền truy cập vào queue đã define
+
+//Message Group
+Group các message lại rồi gửi
+
+-- producer
+			for (int i = 0; i < count; i++) {
+				messages[i] = jmsContext.createTextMessage("Group-0 message"+i);
+				messages[i].setStringProperty("JMSXGroupID", "Group-0");
+				producer.send(requestqueue, messages[i]);
+			}
+			
+
+//Spring JMS
+Sử dụng JMSTemplate để send và receive message
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-artemis</artifactId>
+		</dependency>
+		
+- Thêm @EnableJms vào Application
+	@SpringBootApplication
+	@EnableJms
+	public class SpringJmsApplication {
+
+- thêm application properties
+	springjms.myQueue=myQueue
+	
+- Sender
+	@Component
+	public class MessageSender {
+		@Autowired
+		private JmsTemplate jmsTemplate;
+		
+		@Value("${springjms.myQueue}")
+		private String queue;
+		
+		public void send(String message) {
+			jmsTemplate.convertAndSend(queue, message);
+		}
+	}
+	
+- Listener
+	@Component
+	public class MessageListener {
+		
+		@JmsListener(destination = "${springjms.myQueue}")
+		public void receive(String message) {
+			System.out.println("Message Receive: "+message);
+		}
+	}
+	
+- Test send message
+	@SpringBootTest
+	class SpringJmsApplicationTests {
+		@Autowired
+		MessageSender sender;
+		
+		@Test
+		void testSendAndReceive() {
+			sender.send("Hello Spring JMS!!!");
+		}
+
+	} --> Listener tự động lắng nghe vì đã sử dụng @EnableJms
